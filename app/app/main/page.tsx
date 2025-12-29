@@ -1,9 +1,11 @@
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
-import { Container, Box, Alert, Snackbar, Slider, Typography, Stack } from '@mui/material';
+import { Container, Box, Alert, Snackbar, Slider, Typography, Stack, Accordion, AccordionSummary, AccordionDetails } from '@mui/material';
 import VolumeDown from '@mui/icons-material/VolumeDown';
 import VolumeUp from '@mui/icons-material/VolumeUp';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import { AuthGuard } from '@/components/AuthGuard';
 import { Header } from '@/components/Header';
 import { AudioSelector } from '@/components/AudioSelector';
@@ -122,6 +124,59 @@ export default function MainPage() {
             gap: 4,
           }}
         >
+          {/* 使い方 */}
+          <Accordion sx={{ width: '100%', maxWidth: CANVAS_WIDTH }}>
+            <AccordionSummary
+              expandIcon={<ExpandMoreIcon />}
+              aria-controls="usage-content"
+              id="usage-header"
+            >
+              <Stack direction="row" spacing={1} alignItems="center">
+                <HelpOutlineIcon color="primary" />
+                <Typography>使い方</Typography>
+              </Stack>
+            </AccordionSummary>
+            <AccordionDetails>
+              <Stack spacing={2}>
+                <Box>
+                  <Typography variant="subtitle2" color="primary" gutterBottom>
+                    1. 音声を選択
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    「サンプル音源」ボタンでテスト用のサイン波を使用するか、「ファイルを選択」ボタンでお好きな音声ファイルを読み込みます。
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" component="div" sx={{ mt: 0.5 }}>
+                    対応形式: MP3, WAV, AAC, OGG, WebM, FLAC など
+                  </Typography>
+                </Box>
+                <Box>
+                  <Typography variant="subtitle2" color="primary" gutterBottom>
+                    2. キャンバスで描画
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    音声が読み込まれると、キャンバスが有効になります。マウスやタッチで線を描いてください。
+                  </Typography>
+                </Box>
+                <Box>
+                  <Typography variant="subtitle2" color="primary" gutterBottom>
+                    3. 音声が再生される
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    描いた線に沿って音声が再生されます。
+                  </Typography>
+                  <Box component="ul" sx={{ m: 0, pl: 2, mt: 0.5 }}>
+                    <Typography variant="body2" color="text.secondary" component="li">
+                      線の長さ → 再生時間（長いほど長く再生）
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" component="li">
+                      縦の位置 → ピッチ（上ほど高く、下ほど低く）
+                    </Typography>
+                  </Box>
+                </Box>
+              </Stack>
+            </AccordionDetails>
+          </Accordion>
+
           {/* 音声選択UI */}
           <AudioSelector
             onAudioLoaded={handleAudioLoaded}
