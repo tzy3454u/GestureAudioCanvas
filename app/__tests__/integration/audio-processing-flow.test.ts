@@ -55,6 +55,13 @@ class MockAudioBufferSourceNode {
   disconnect(): void {}
 }
 
+class MockGainNode {
+  gain = { value: 1 };
+
+  connect(): void {}
+  disconnect(): void {}
+}
+
 class MockAudioContext {
   sampleRate = 44100;
   state = 'running';
@@ -68,6 +75,10 @@ class MockAudioContext {
   createBufferSource(): AudioBufferSourceNode {
     this.lastSourceNode = new MockAudioBufferSourceNode();
     return this.lastSourceNode as unknown as AudioBufferSourceNode;
+  }
+
+  createGain(): GainNode {
+    return new MockGainNode() as unknown as GainNode;
   }
 
   decodeAudioData(arrayBuffer: ArrayBuffer): Promise<AudioBuffer> {
@@ -234,24 +245,32 @@ describe('音声処理フロー統合テスト', () => {
   });
 
   describe('Req 4.2, 4.3, 4.4: 線の長さに基づく音声の長さ変換', () => {
-    it('20pxの線で元の音声長さ（1.0倍）を返す', () => {
+    // キャンバス幅800pxの場合、基準距離は400px（キャンバス幅の半分）
+    const CANVAS_WIDTH = 800;
+    const BASE_DISTANCE = CANVAS_WIDTH / 2; // 400px
+
+    it('キャンバス幅の半分の線で元の音声長さ（1.0倍）を返す', () => {
       const { result } = renderHook(() => useAudioProcessor());
-      expect(result.current.calculateDurationRate(20)).toBe(1.0);
+      // distance = 400 (= CANVAS_WIDTH / 2) → durationRate = 1.0
+      expect(result.current.calculateDurationRate(BASE_DISTANCE, CANVAS_WIDTH)).toBe(1.0);
     });
 
-    it('40pxの線で2倍の音声長さを返す', () => {
+    it('キャンバス幅と同じ線で2倍の音声長さを返す', () => {
       const { result } = renderHook(() => useAudioProcessor());
-      expect(result.current.calculateDurationRate(40)).toBe(2.0);
+      // distance = 800 (= CANVAS_WIDTH) → durationRate = 2.0
+      expect(result.current.calculateDurationRate(CANVAS_WIDTH, CANVAS_WIDTH)).toBe(2.0);
     });
 
-    it('10pxの線で半分の音声長さを返す', () => {
+    it('キャンバス幅の1/4の線で半分の音声長さを返す', () => {
       const { result } = renderHook(() => useAudioProcessor());
-      expect(result.current.calculateDurationRate(10)).toBe(0.5);
+      // distance = 200 (= CANVAS_WIDTH / 4) → durationRate = 0.5
+      expect(result.current.calculateDurationRate(BASE_DISTANCE / 2, CANVAS_WIDTH)).toBe(0.5);
     });
 
-    it('100pxの線で5倍の音声長さを返す', () => {
+    it('キャンバス幅の2.5倍の線で5倍の音声長さを返す', () => {
       const { result } = renderHook(() => useAudioProcessor());
-      expect(result.current.calculateDurationRate(100)).toBe(5.0);
+      // distance = 2000 (= CANVAS_WIDTH * 2.5) → durationRate = 5.0
+      expect(result.current.calculateDurationRate(BASE_DISTANCE * 5, CANVAS_WIDTH)).toBe(5.0);
     });
   });
 

@@ -37,18 +37,26 @@ const mockLoadSampleAudio = jest.fn();
 const mockLoadAudioFile = jest.fn();
 const mockInitializeAudioContext = jest.fn();
 
+const mockCalculateDurationRate = jest.fn((distance: number, canvasWidth: number) => {
+  const baseDistance = canvasWidth / 2;
+  return distance / baseDistance;
+});
+
 const mockUseAudioProcessor = {
   audioBuffer: null,
   reversedBuffer: null,
   isLoading: false,
   isPlaying: false,
   error: null,
+  volume: 0.5,
   initializeAudioContext: mockInitializeAudioContext,
   loadAudioFile: mockLoadAudioFile,
   loadSampleAudio: mockLoadSampleAudio,
+  setAudioBufferExternal: jest.fn(),
   playAudio: mockPlayAudio,
   stopAudio: jest.fn(),
-  calculateDurationRate: jest.fn((distance: number) => distance / 20),
+  setVolumeLevel: jest.fn(),
+  calculateDurationRate: mockCalculateDurationRate,
   calculatePitchRate: jest.fn((normalizedY: number) => Math.pow(2, normalizedY * 2)),
   isReversePlayback: jest.fn((xDelta: number) => xDelta < 0),
 };
@@ -73,6 +81,24 @@ jest.mock('@/hooks/useGestureCanvas', () => ({
     calculateGestureParams: jest.fn(),
     getCanvasPoint: jest.fn(),
   }),
+}));
+
+// GestureCanvasモックのonGestureCompleteをキャプチャ
+type GestureDataType = { startPoint: { x: number; y: number }; endPoint: { x: number; y: number }; distance: number };
+let capturedOnGestureComplete: ((gesture: GestureDataType) => void) | null = null;
+
+jest.mock('@/components/GestureCanvas', () => ({
+  GestureCanvas: ({ onGestureComplete, isEnabled, isPlaying }: { onGestureComplete: (gesture: GestureDataType) => void; isEnabled: boolean; isPlaying: boolean }) => {
+    capturedOnGestureComplete = onGestureComplete;
+    // isPlayingを優先的に表示（再生中テストのため）
+    const showOverlay = !isEnabled || isPlaying;
+    const overlayMessage = isPlaying ? '再生中...' : (!isEnabled ? '音声をロードしてください' : '');
+    return (
+      <div data-testid="gesture-canvas">
+        {showOverlay && overlayMessage && <span>{overlayMessage}</span>}
+      </div>
+    );
+  },
 }));
 
 describe('MainPage', () => {
@@ -191,6 +217,29 @@ describe('MainPage', () => {
 
       // onGestureComplete コールバックをシミュレート
       // 実際のテストではGestureCanvasからのコールバックをトリガーする
+    });
+
+    it('calculateDurationRateにキャンバス幅（CANVAS_WIDTH=800）を渡す', () => {
+      const mockBuffer = { duration: 5, sampleRate: 44100, numberOfChannels: 1, length: 220500, getChannelData: jest.fn() } as unknown as AudioBuffer;
+      mockUseAudioProcessor.audioBuffer = mockBuffer;
+
+      render(<MainPage />);
+
+      // ジェスチャー完了をシミュレート
+      const gesture: GestureDataType = {
+        startPoint: { x: 100, y: 200 },
+        endPoint: { x: 500, y: 200 },
+        distance: 400,
+      };
+
+      act(() => {
+        if (capturedOnGestureComplete) {
+          capturedOnGestureComplete(gesture);
+        }
+      });
+
+      // calculateDurationRateがdistance=400, canvasWidth=800で呼ばれることを検証
+      expect(mockCalculateDurationRate).toHaveBeenCalledWith(400, 800);
     });
 
     it('再生中はキャンバスが無効化される', () => {

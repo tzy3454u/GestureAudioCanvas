@@ -119,7 +119,7 @@ describe('LoginPage', () => {
     render(<LoginPage />);
 
     await waitFor(() => {
-      expect(mockPush).toHaveBeenCalledWith('/');
+      expect(mockPush).toHaveBeenCalledWith('/main');
     });
   });
 

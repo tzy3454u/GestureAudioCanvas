@@ -21,7 +21,7 @@ export interface GestureData {
 }
 
 export interface GestureCanvasHook {
-  canvasRef: RefObject<HTMLCanvasElement | null>;
+  canvasRef: RefObject<HTMLCanvasElement>;
   isDrawing: boolean;
   currentPath: Point[];
   handlePointerDown: (e: React.PointerEvent<HTMLCanvasElement>) => void;
@@ -39,7 +39,7 @@ const STROKE_WIDTH = 3;
  * キャンバス上のジェスチャーを検出しパラメータに変換するカスタムフック
  */
 export function useGestureCanvas(): GestureCanvasHook {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [currentPath, setCurrentPath] = useState<Point[]>([]);
   const startPointRef = useRef<Point | null>(null);

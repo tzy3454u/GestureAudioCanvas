@@ -1,7 +1,9 @@
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
-import { Container, Box, Alert, Snackbar } from '@mui/material';
+import { Container, Box, Alert, Snackbar, Slider, Typography, Stack } from '@mui/material';
+import VolumeDown from '@mui/icons-material/VolumeDown';
+import VolumeUp from '@mui/icons-material/VolumeUp';
 import { AuthGuard } from '@/components/AuthGuard';
 import { Header } from '@/components/Header';
 import { AudioSelector } from '@/components/AudioSelector';
@@ -25,7 +27,10 @@ export default function MainPage() {
     audioBuffer,
     isPlaying,
     error: audioError,
+    volume,
+    setAudioBufferExternal,
     playAudio,
+    setVolumeLevel,
     calculateDurationRate,
     calculatePitchRate,
     isReversePlayback,
@@ -40,10 +45,15 @@ export default function MainPage() {
   }, [audioError]);
 
   // 音声ロード完了時のハンドラ
-  const handleAudioLoaded = useCallback((buffer: AudioBuffer) => {
-    setIsAudioLoaded(true);
-    setErrorMessage(null);
-  }, []);
+  const handleAudioLoaded = useCallback(async (buffer: AudioBuffer) => {
+    try {
+      await setAudioBufferExternal(buffer);
+      setIsAudioLoaded(true);
+      setErrorMessage(null);
+    } catch {
+      // エラーはuseAudioProcessor内で処理される
+    }
+  }, [setAudioBufferExternal]);
 
   // エラー発生時のハンドラ
   const handleError = useCallback((error: string) => {
@@ -72,7 +82,7 @@ export default function MainPage() {
       const normalizedY = (gesture.startPoint.y - centerY) / centerY;
 
       // 再生パラメータを計算
-      const durationRate = calculateDurationRate(gesture.distance);
+      const durationRate = calculateDurationRate(gesture.distance, CANVAS_WIDTH);
       const pitchRate = calculatePitchRate(normalizedY);
 
       const params: PlaybackParams = {
@@ -91,6 +101,14 @@ export default function MainPage() {
   const handleCloseError = useCallback(() => {
     setShowError(false);
   }, []);
+
+  // 音量変更ハンドラ
+  const handleVolumeChange = useCallback(
+    (_event: Event, newValue: number | number[]) => {
+      setVolumeLevel(newValue as number);
+    },
+    [setVolumeLevel]
+  );
 
   return (
     <AuthGuard>
@@ -117,12 +135,29 @@ export default function MainPage() {
 
           {/* ジェスチャーキャンバス */}
           <GestureCanvas
-            isEnabled={isAudioLoaded && !!audioBuffer}
+            isEnabled={isAudioLoaded}
             isPlaying={isPlaying}
             onGestureComplete={handleGestureComplete}
             width={CANVAS_WIDTH}
             height={CANVAS_HEIGHT}
           />
+
+          {/* 音量スライダー */}
+          <Box sx={{ width: '100%', maxWidth: 300 }}>
+            <Typography gutterBottom>音量</Typography>
+            <Stack spacing={2} direction="row" alignItems="center">
+              <VolumeDown />
+              <Slider
+                value={volume}
+                onChange={handleVolumeChange}
+                min={0}
+                max={1}
+                step={0.01}
+                aria-label="音量"
+              />
+              <VolumeUp />
+            </Stack>
+          </Box>
 
           {/* エラー表示（常に表示） */}
           {errorMessage && (

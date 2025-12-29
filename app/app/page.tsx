@@ -1,26 +1,34 @@
 'use client';
 
-import { Container, Typography, Box } from '@mui/material';
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { Box, CircularProgress } from '@mui/material';
+import { useAuth } from '@/hooks/useAuth';
 
 export default function Home() {
+  const router = useRouter();
+  const { isLoading, isAuthenticated } = useAuth();
+
+  useEffect(() => {
+    if (!isLoading) {
+      if (isAuthenticated) {
+        router.push('/main');
+      } else {
+        router.push('/login');
+      }
+    }
+  }, [isLoading, isAuthenticated, router]);
+
   return (
-    <Container maxWidth="md">
-      <Box
-        sx={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          minHeight: '100vh',
-        }}
-      >
-        <Typography variant="h3" component="h1" gutterBottom>
-          Gesture Audio Canvas
-        </Typography>
-        <Typography variant="body1" color="text.secondary">
-          ジェスチャーで音声を操作するWebアプリケーション
-        </Typography>
-      </Box>
-    </Container>
+    <Box
+      sx={{
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        minHeight: '100vh',
+      }}
+    >
+      <CircularProgress />
+    </Box>
   );
 }

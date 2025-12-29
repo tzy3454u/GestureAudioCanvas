@@ -14,20 +14,29 @@ export interface AudioProcessorHook {
   isLoading: boolean;
   isPlaying: boolean;
   error: string | null;
+  volume: number;
 
   initializeAudioContext: () => Promise<void>;
   loadAudioFile: (file: File) => Promise<void>;
   loadSampleAudio: () => Promise<void>;
+  setAudioBufferExternal: (buffer: AudioBuffer) => Promise<void>;
   playAudio: (params: PlaybackParams) => void;
   stopAudio: () => void;
-  calculateDurationRate: (distance: number) => number;
+  setVolumeLevel: (volume: number) => void;
+  /**
+   * 線の長さとキャンバス幅から再生時間倍率を計算する
+   * @param distance - 線の長さ（ピクセル）
+   * @param canvasWidth - キャンバスの幅（ピクセル）
+   * @returns 再生時間倍率（1.0 = 元の音声長さ）
+   */
+  calculateDurationRate: (distance: number, canvasWidth: number) => number;
   calculatePitchRate: (normalizedY: number) => number;
   isReversePlayback: (xDelta: number) => boolean;
 }
 
 const SAMPLE_DURATION = 5; // seconds
 const SAMPLE_FREQUENCY = 440; // Hz (A4)
-const BASE_DISTANCE_PX = 20;
+const DEFAULT_CANVAS_WIDTH = 800; // デフォルトのキャンバス幅（px）
 const MIN_PITCH_RATE = 0.25;
 const MAX_PITCH_RATE = 4.0;
 
@@ -43,6 +52,10 @@ export function useAudioProcessor(): AudioProcessorHook {
 
   const audioContextRef = useRef<AudioContext | null>(null);
   const sourceNodeRef = useRef<AudioBufferSourceNode | null>(null);
+  const audioBufferRef = useRef<AudioBuffer | null>(null);
+  const reversedBufferRef = useRef<AudioBuffer | null>(null);
+  const gainNodeRef = useRef<GainNode | null>(null);
+  const [volume, setVolume] = useState(0.5);
 
   /**
    * AudioContextを初期化する
@@ -63,12 +76,16 @@ export function useAudioProcessor(): AudioProcessorHook {
         throw new Error('お使いのブラウザは音声再生に対応していません');
       }
       audioContextRef.current = new AudioContextClass();
+      // GainNodeを作成して接続
+      gainNodeRef.current = audioContextRef.current.createGain();
+      gainNodeRef.current.gain.value = volume;
+      gainNodeRef.current.connect(audioContextRef.current.destination);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'AudioContextの初期化に失敗しました';
       setError(message);
       throw err;
     }
-  }, []);
+  }, [volume]);
 
   /**
    * AudioBufferを逆順に反転する
@@ -127,12 +144,32 @@ export function useAudioProcessor(): AudioProcessorHook {
 
       setAudioBuffer(buffer);
       setReversedBuffer(reversed);
+      audioBufferRef.current = buffer;
+      reversedBufferRef.current = reversed;
     } catch (err) {
       const message = err instanceof Error ? err.message : '音声ファイルの読み込みに失敗しました';
       setError(message);
       throw err;
     } finally {
       setIsLoading(false);
+    }
+  }, [initializeAudioContext, reverseAudioBuffer]);
+
+  /**
+   * 外部からAudioBufferを設定する
+   */
+  const setAudioBufferExternal = useCallback(async (buffer: AudioBuffer): Promise<void> => {
+    try {
+      await initializeAudioContext();
+      const reversed = reverseAudioBuffer(buffer);
+      setAudioBuffer(buffer);
+      setReversedBuffer(reversed);
+      audioBufferRef.current = buffer;
+      reversedBufferRef.current = reversed;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'AudioBufferの設定に失敗しました';
+      setError(message);
+      throw err;
     }
   }, [initializeAudioContext, reverseAudioBuffer]);
 
@@ -174,6 +211,8 @@ export function useAudioProcessor(): AudioProcessorHook {
 
       setAudioBuffer(buffer);
       setReversedBuffer(reversed);
+      audioBufferRef.current = buffer;
+      reversedBufferRef.current = reversed;
     } catch (err) {
       const message = err instanceof Error ? err.message : '音声ファイルの読み込みに失敗しました';
       setError(message);
@@ -184,11 +223,18 @@ export function useAudioProcessor(): AudioProcessorHook {
   }, [initializeAudioContext, reverseAudioBuffer]);
 
   /**
-   * 線の長さから再生時間倍率を計算する
-   * 20px = 元の音声長さ（1.0倍）
+   * 線の長さとキャンバス幅から再生時間倍率を計算する
+   * キャンバス幅の半分 = 元の音声長さ（1.0倍）
+   * @param distance - 線の長さ（ピクセル）
+   * @param canvasWidth - キャンバスの幅（ピクセル）
+   * @returns 再生時間倍率（1.0 = 元の音声長さ）
    */
-  const calculateDurationRate = useCallback((distance: number): number => {
-    return distance / BASE_DISTANCE_PX;
+  const calculateDurationRate = useCallback((distance: number, canvasWidth: number): number => {
+    // キャンバス幅が0以下の場合はデフォルト値を使用
+    const effectiveCanvasWidth = canvasWidth > 0 ? canvasWidth : DEFAULT_CANVAS_WIDTH;
+    // 基準距離はキャンバス幅の半分
+    const baseDistance = effectiveCanvasWidth / 2;
+    return distance / baseDistance;
   }, []);
 
   /**
@@ -227,7 +273,7 @@ export function useAudioProcessor(): AudioProcessorHook {
       return;
     }
 
-    const bufferToPlay = params.isReverse ? reversedBuffer : audioBuffer;
+    const bufferToPlay = params.isReverse ? reversedBufferRef.current : audioBufferRef.current;
     if (!bufferToPlay) {
       setError('音声がロードされていません');
       return;
@@ -246,14 +292,22 @@ export function useAudioProcessor(): AudioProcessorHook {
       const source = ctx.createBufferSource();
       source.buffer = bufferToPlay;
 
-      // playbackRateはピッチと速度の両方に影響する
-      // durationRate（時間倍率）の逆数とpitchRateを掛け合わせる
-      // durationRate=2（2倍長い）→ playbackRate=0.5（遅く再生）
-      // pitchRate=2（高いピッチ）→ playbackRate=2（速く再生）
-      const effectiveRate = params.pitchRate / params.durationRate;
-      source.playbackRate.value = effectiveRate > 0 ? effectiveRate : 0.01;
+      // ピッチ倍率をplaybackRateに適用
+      const playbackRate = params.pitchRate > 0 ? params.pitchRate : 0.01;
+      source.playbackRate.value = playbackRate;
 
-      source.connect(ctx.destination);
+      // durationRateに基づいて再生するバッファの長さを計算
+      // durationRate=1.0 → 元の音声長さ分のバッファを再生
+      // 実際の再生時間 = バッファ長 / playbackRate
+      const baseDuration = bufferToPlay.duration;
+      const bufferDurationToPlay = Math.min(params.durationRate * baseDuration, baseDuration);
+
+      // GainNodeを経由して接続
+      if (gainNodeRef.current) {
+        source.connect(gainNodeRef.current);
+      } else {
+        source.connect(ctx.destination);
+      }
 
       source.onended = () => {
         setIsPlaying(false);
@@ -261,13 +315,14 @@ export function useAudioProcessor(): AudioProcessorHook {
       };
 
       sourceNodeRef.current = source;
-      source.start();
+      // duration引数はバッファ内の時間（秒）
+      source.start(0, 0, bufferDurationToPlay);
       setIsPlaying(true);
     } catch (err) {
       const message = err instanceof Error ? err.message : '音声の再生に失敗しました';
       setError(message);
     }
-  }, [audioBuffer, reversedBuffer]);
+  }, []);
 
   /**
    * 音声再生を停止する
@@ -284,17 +339,31 @@ export function useAudioProcessor(): AudioProcessorHook {
     setIsPlaying(false);
   }, []);
 
+  /**
+   * 音量を設定する（0.0 〜 1.0）
+   */
+  const setVolumeLevel = useCallback((newVolume: number): void => {
+    const clampedVolume = Math.max(0, Math.min(1, newVolume));
+    setVolume(clampedVolume);
+    if (gainNodeRef.current) {
+      gainNodeRef.current.gain.value = clampedVolume;
+    }
+  }, []);
+
   return {
     audioBuffer,
     reversedBuffer,
     isLoading,
     isPlaying,
     error,
+    volume,
     initializeAudioContext,
     loadAudioFile,
     loadSampleAudio,
+    setAudioBufferExternal,
     playAudio,
     stopAudio,
+    setVolumeLevel,
     calculateDurationRate,
     calculatePitchRate,
     isReversePlayback,

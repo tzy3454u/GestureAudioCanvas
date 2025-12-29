@@ -39,6 +39,13 @@ class MockAudioBufferSourceNode {
   disconnect(): void {}
 }
 
+class MockGainNode {
+  gain = { value: 1 };
+
+  connect(): void {}
+  disconnect(): void {}
+}
+
 class MockAudioContext {
   sampleRate = 44100;
   state = 'running';
@@ -50,6 +57,10 @@ class MockAudioContext {
 
   createBufferSource(): AudioBufferSourceNode {
     return new MockAudioBufferSourceNode() as unknown as AudioBufferSourceNode;
+  }
+
+  createGain(): GainNode {
+    return new MockGainNode() as unknown as GainNode;
   }
 
   decodeAudioData(arrayBuffer: ArrayBuffer): Promise<AudioBuffer> {
@@ -243,24 +254,42 @@ describe('useAudioProcessor', () => {
 
   describe('再生パラメータ計算', () => {
     describe('calculateDurationRate', () => {
-      it('20pxの線の長さで1.0（元の長さ）を返す', () => {
+      it('キャンバス幅の半分の線の長さで1.0（元の長さ）を返す', () => {
         const { result } = renderHook(() => useAudioProcessor());
-        expect(result.current.calculateDurationRate(20)).toBe(1.0);
+        // canvasWidth = 800, distance = 400 (半分) → durationRate = 1.0
+        expect(result.current.calculateDurationRate(400, 800)).toBe(1.0);
       });
 
-      it('40pxの線の長さで2.0（2倍の長さ）を返す', () => {
+      it('キャンバス幅と同じ線の長さで2.0（2倍の長さ）を返す', () => {
         const { result } = renderHook(() => useAudioProcessor());
-        expect(result.current.calculateDurationRate(40)).toBe(2.0);
+        // canvasWidth = 800, distance = 800 → durationRate = 2.0
+        expect(result.current.calculateDurationRate(800, 800)).toBe(2.0);
       });
 
-      it('10pxの線の長さで0.5（半分の長さ）を返す', () => {
+      it('キャンバス幅の1/4の線の長さで0.5（半分の長さ）を返す', () => {
         const { result } = renderHook(() => useAudioProcessor());
-        expect(result.current.calculateDurationRate(10)).toBe(0.5);
+        // canvasWidth = 800, distance = 200 (1/4) → durationRate = 0.5
+        expect(result.current.calculateDurationRate(200, 800)).toBe(0.5);
       });
 
       it('0pxの線の長さで0を返す', () => {
         const { result } = renderHook(() => useAudioProcessor());
-        expect(result.current.calculateDurationRate(0)).toBe(0);
+        expect(result.current.calculateDurationRate(0, 800)).toBe(0);
+      });
+
+      it('キャンバス幅が0以下の場合はデフォルト値800を使用する', () => {
+        const { result } = renderHook(() => useAudioProcessor());
+        // canvasWidth = 0, distance = 400 → デフォルト800を使用 → 400/400 = 1.0
+        expect(result.current.calculateDurationRate(400, 0)).toBe(1.0);
+        expect(result.current.calculateDurationRate(400, -100)).toBe(1.0);
+      });
+
+      it('異なるキャンバスサイズでも線形比率を維持する', () => {
+        const { result } = renderHook(() => useAudioProcessor());
+        // canvasWidth = 1200, distance = 600 (半分) → durationRate = 1.0
+        expect(result.current.calculateDurationRate(600, 1200)).toBe(1.0);
+        // canvasWidth = 400, distance = 200 (半分) → durationRate = 1.0
+        expect(result.current.calculateDurationRate(200, 400)).toBe(1.0);
       });
     });
 
