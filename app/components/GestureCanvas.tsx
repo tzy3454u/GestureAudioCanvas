@@ -27,10 +27,10 @@ export function GestureCanvas({
 }: GestureCanvasProps) {
   const {
     canvasRef,
-    isDrawing,
     handlePointerDown,
     handlePointerMove,
     handlePointerUp,
+    handlePointerLeave,
     clearCanvas,
   } = useGestureCanvas();
 
@@ -68,13 +68,15 @@ export function GestureCanvas({
     [isEnabled, isPlaying, handlePointerUp, onGestureComplete]
   );
 
-  const handlePointerLeave = useCallback(
+  const handleLeave = useCallback(
     (e: React.PointerEvent<HTMLCanvasElement>) => {
-      if (isDrawing) {
-        handleUp(e);
+      if (!isEnabled || isPlaying) return;
+      const gestureData = handlePointerLeave(e);
+      if (gestureData) {
+        onGestureComplete(gestureData);
       }
     },
-    [isDrawing, handleUp]
+    [isEnabled, isPlaying, handlePointerLeave, onGestureComplete]
   );
 
   const showOverlay = !isEnabled || isPlaying;
@@ -102,7 +104,7 @@ export function GestureCanvas({
         onPointerDown={handleDown}
         onPointerMove={handleMove}
         onPointerUp={handleUp}
-        onPointerLeave={handlePointerLeave}
+        onPointerLeave={handleLeave}
         style={{
           display: 'block',
         }}

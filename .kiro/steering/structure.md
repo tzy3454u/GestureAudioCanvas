@@ -21,6 +21,11 @@
 **Purpose**: カスタムフック（ビジネスロジック・状態管理）
 **Example**: `useAudioProcessor.ts`, `useGestureCanvas.ts`
 
+### Contexts (`app/contexts/`)
+**Location**: `app/contexts/`
+**Purpose**: React Context（グローバル状態管理）
+**Example**: `AuthContext.tsx`
+
 ### Library (`app/lib/`)
 **Location**: `app/lib/`
 **Purpose**: ユーティリティ、設定、外部サービス連携
@@ -63,3 +68,5 @@ import { Header } from '@/components/Header';
 
 ---
 _Document patterns, not file trees. New files following patterns shouldn't require updates_
+
+<!-- updated_at: 2025-12-29 - Added Contexts directory pattern -->

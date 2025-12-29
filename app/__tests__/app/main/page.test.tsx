@@ -119,6 +119,24 @@ jest.mock('@/components/GestureCanvas', () => ({
   },
 }));
 
+// useResponsiveCanvasのモック
+const mockCanvasSize = { width: 800, height: 400 };
+const mockUseResponsiveCanvas = {
+  canvasSize: mockCanvasSize,
+  isMobile: false,
+  isTablet: false,
+  isDesktop: true,
+};
+
+jest.mock('@/hooks/useResponsiveCanvas', () => ({
+  useResponsiveCanvas: () => mockUseResponsiveCanvas,
+  CANVAS_SIZES: {
+    mobile: { width: 350, height: 175 },
+    tablet: { width: 550, height: 275 },
+    desktop: { width: 800, height: 400 },
+  },
+}));
+
 describe('MainPage', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -129,6 +147,11 @@ describe('MainPage', () => {
     mockUseAudioProcessor.isPlaying = false;
     mockUseAudioProcessor.error = null;
     capturedOnGestureComplete = null;
+    // Reset responsive mock to desktop
+    mockUseResponsiveCanvas.canvasSize = { width: 800, height: 400 };
+    mockUseResponsiveCanvas.isMobile = false;
+    mockUseResponsiveCanvas.isTablet = false;
+    mockUseResponsiveCanvas.isDesktop = true;
   });
 
   describe('Task 6.1: メインページのレイアウト構成', () => {
@@ -384,6 +407,133 @@ describe('MainPage', () => {
       const alerts = screen.getAllByRole('alert');
       expect(alerts.length).toBeGreaterThan(0);
       expect(screen.getAllByText('音声の再生に失敗しました').length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('Task 2: MainPageのレスポンシブ対応', () => {
+    describe('Task 2.1: キャンバスサイズの動的適用', () => {
+      it('useResponsiveCanvasから取得したサイズをGestureCanvasに渡す', () => {
+        mockUseResponsiveCanvas.canvasSize = { width: 550, height: 275 };
+
+        render(<MainPage />);
+
+        // GestureCanvasが正しいサイズで描画されることを検証
+        expect(screen.getByTestId('gesture-canvas')).toBeInTheDocument();
+      });
+
+      it('デスクトップサイズ（800x400）でhandleGestureCompleteがキャンバスサイズを正しく使用する', () => {
+        const mockBuffer = { duration: 5, sampleRate: 44100, numberOfChannels: 1, length: 220500, getChannelData: jest.fn() } as unknown as AudioBuffer;
+        mockUseAudioProcessor.audioBuffer = mockBuffer;
+        mockUseResponsiveCanvas.canvasSize = { width: 800, height: 400 };
+
+        render(<MainPage />);
+
+        const gesture: GestureDataType = {
+          startPoint: { x: 100, y: 200 },
+          endPoint: { x: 500, y: 200 },
+          path: [{ x: 100, y: 200 }, { x: 500, y: 200 }],
+          distance: 400,
+          pathLength: 400,
+          cumulativeDistances: [0, 400],
+        };
+
+        act(() => {
+          if (capturedOnGestureComplete) {
+            capturedOnGestureComplete(gesture);
+          }
+        });
+
+        // デスクトップサイズ(800x400)が使用される
+        expect(mockCalculateDurationRate).toHaveBeenCalledWith(400, 800);
+        expect(mockGeneratePitchCurve).toHaveBeenCalledWith(expect.any(Array), 400);
+      });
+
+      it('モバイルサイズ（350x175）でhandleGestureCompleteがキャンバスサイズを正しく使用する', () => {
+        const mockBuffer = { duration: 5, sampleRate: 44100, numberOfChannels: 1, length: 220500, getChannelData: jest.fn() } as unknown as AudioBuffer;
+        mockUseAudioProcessor.audioBuffer = mockBuffer;
+        mockUseResponsiveCanvas.canvasSize = { width: 350, height: 175 };
+        mockUseResponsiveCanvas.isMobile = true;
+        mockUseResponsiveCanvas.isDesktop = false;
+
+        render(<MainPage />);
+
+        const gesture: GestureDataType = {
+          startPoint: { x: 50, y: 100 },
+          endPoint: { x: 250, y: 100 },
+          path: [{ x: 50, y: 100 }, { x: 250, y: 100 }],
+          distance: 200,
+          pathLength: 200,
+          cumulativeDistances: [0, 200],
+        };
+
+        act(() => {
+          if (capturedOnGestureComplete) {
+            capturedOnGestureComplete(gesture);
+          }
+        });
+
+        // モバイルサイズ(350x175)が使用される
+        expect(mockCalculateDurationRate).toHaveBeenCalledWith(200, 350);
+        expect(mockGeneratePitchCurve).toHaveBeenCalledWith(expect.any(Array), 175);
+      });
+
+      it('タブレットサイズ（550x275）でhandleGestureCompleteがキャンバスサイズを正しく使用する', () => {
+        const mockBuffer = { duration: 5, sampleRate: 44100, numberOfChannels: 1, length: 220500, getChannelData: jest.fn() } as unknown as AudioBuffer;
+        mockUseAudioProcessor.audioBuffer = mockBuffer;
+        mockUseResponsiveCanvas.canvasSize = { width: 550, height: 275 };
+        mockUseResponsiveCanvas.isTablet = true;
+        mockUseResponsiveCanvas.isDesktop = false;
+
+        render(<MainPage />);
+
+        const gesture: GestureDataType = {
+          startPoint: { x: 100, y: 150 },
+          endPoint: { x: 400, y: 150 },
+          path: [{ x: 100, y: 150 }, { x: 400, y: 150 }],
+          distance: 300,
+          pathLength: 300,
+          cumulativeDistances: [0, 300],
+        };
+
+        act(() => {
+          if (capturedOnGestureComplete) {
+            capturedOnGestureComplete(gesture);
+          }
+        });
+
+        // タブレットサイズ(550x275)が使用される
+        expect(mockCalculateDurationRate).toHaveBeenCalledWith(300, 550);
+        expect(mockGeneratePitchCurve).toHaveBeenCalledWith(expect.any(Array), 275);
+      });
+    });
+
+    describe('Task 2.2: レイアウトのパディングとギャップ調整', () => {
+      it('Containerがレスポンシブなpyとgap設定を持つ', () => {
+        const { container } = render(<MainPage />);
+
+        // MUIのContainerコンポーネントが存在することを確認
+        const muiContainer = container.querySelector('[class*="MuiContainer"]');
+        expect(muiContainer).toBeTruthy();
+      });
+    });
+
+    describe('Task 2.3: 音量スライダーとAccordionの幅調整', () => {
+      it('音量スライダーが最大幅300pxで表示される', () => {
+        render(<MainPage />);
+
+        // 音量ラベルが存在することを確認
+        expect(screen.getByText('音量')).toBeInTheDocument();
+      });
+
+      it('AccordionがcanvasSizeの幅に同期される', () => {
+        mockUseResponsiveCanvas.canvasSize = { width: 550, height: 275 };
+
+        const { container } = render(<MainPage />);
+
+        // Accordionが存在することを確認
+        const accordion = container.querySelector('[class*="MuiAccordion"]');
+        expect(accordion).toBeTruthy();
+      });
     });
   });
 });

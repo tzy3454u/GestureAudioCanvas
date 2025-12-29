@@ -114,7 +114,10 @@ export function AudioSelector({
           音声ソースを選択
         </Typography>
 
-        <Stack direction="row" spacing={2}>
+        <Stack
+          direction={{ xs: 'column', sm: 'row' }}
+          spacing={2}
+        >
           {/* サンプル音源ボタン */}
           <Button
             variant={selectedSource === 'sample' ? 'contained' : 'outlined'}
@@ -128,6 +131,7 @@ export function AudioSelector({
             onClick={handleSampleClick}
             disabled={isLoading}
             fullWidth
+            sx={{ minHeight: 44 }}
           >
             サンプル音源
           </Button>
@@ -145,6 +149,7 @@ export function AudioSelector({
             onClick={handleFileButtonClick}
             disabled={isLoading}
             fullWidth
+            sx={{ minHeight: 44 }}
           >
             ファイルを選択
           </Button>

@@ -12,9 +12,7 @@ import { AudioSelector } from '@/components/AudioSelector';
 import { GestureCanvas } from '@/components/GestureCanvas';
 import { useAudioProcessor, DynamicPlaybackParams } from '@/hooks/useAudioProcessor';
 import { GestureData } from '@/hooks/useGestureCanvas';
-
-const CANVAS_WIDTH = 800;
-const CANVAS_HEIGHT = 400;
+import { useResponsiveCanvas } from '@/hooks/useResponsiveCanvas';
 
 /**
  * メインアプリケーション画面
@@ -24,6 +22,9 @@ export default function MainPage() {
   const [isAudioLoaded, setIsAudioLoaded] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [showError, setShowError] = useState(false);
+
+  // レスポンシブキャンバスサイズを取得
+  const { canvasSize } = useResponsiveCanvas();
 
   const {
     audioBuffer,
@@ -75,10 +76,10 @@ export default function MainPage() {
       if (!audioBuffer) return;
 
       // 軌跡総線分長から再生時間倍率を計算（pathLengthを使用）
-      const durationRate = calculateDurationRate(gesture.pathLength, CANVAS_WIDTH);
+      const durationRate = calculateDurationRate(gesture.pathLength, canvasSize.width);
 
       // 軌跡からピッチ曲線を生成
-      const pitchCurve = generatePitchCurve(gesture.path, CANVAS_HEIGHT);
+      const pitchCurve = generatePitchCurve(gesture.path, canvasSize.height);
 
       // 再生時間を計算
       const duration = durationRate * audioBuffer.duration;
@@ -93,7 +94,7 @@ export default function MainPage() {
       // 動的ピッチで音声を再生（X座標方向に関わらず常に順再生）
       playAudioWithDynamicPitch(params);
     },
-    [audioBuffer, calculateDurationRate, generatePitchCurve, playAudioWithDynamicPitch]
+    [audioBuffer, canvasSize, calculateDurationRate, generatePitchCurve, playAudioWithDynamicPitch]
   );
 
   // エラーダイアログを閉じる
@@ -120,12 +121,12 @@ export default function MainPage() {
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
-            py: 4,
-            gap: 4,
+            py: { xs: 2, sm: 4 },
+            gap: { xs: 2, sm: 4 },
           }}
         >
           {/* 使い方 */}
-          <Accordion sx={{ width: '100%', maxWidth: CANVAS_WIDTH }}>
+          <Accordion sx={{ width: '100%', maxWidth: canvasSize.width }}>
             <AccordionSummary
               expandIcon={<ExpandMoreIcon />}
               aria-controls="usage-content"
@@ -190,8 +191,8 @@ export default function MainPage() {
             isEnabled={isAudioLoaded}
             isPlaying={isPlaying}
             onGestureComplete={handleGestureComplete}
-            width={CANVAS_WIDTH}
-            height={CANVAS_HEIGHT}
+            width={canvasSize.width}
+            height={canvasSize.height}
           />
 
           {/* 音量スライダー */}
@@ -213,7 +214,7 @@ export default function MainPage() {
 
           {/* エラー表示（常に表示） */}
           {errorMessage && (
-            <Alert severity="error" sx={{ width: '100%', maxWidth: CANVAS_WIDTH }}>
+            <Alert severity="error" sx={{ width: '100%', maxWidth: canvasSize.width }}>
               {errorMessage}
             </Alert>
           )}

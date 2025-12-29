@@ -67,6 +67,7 @@ export interface GestureCanvasHook {
   handlePointerDown: (e: React.PointerEvent<HTMLCanvasElement>) => void;
   handlePointerMove: (e: React.PointerEvent<HTMLCanvasElement>) => void;
   handlePointerUp: (e: React.PointerEvent<HTMLCanvasElement>) => GestureData | null;
+  handlePointerLeave: (e: React.PointerEvent<HTMLCanvasElement>) => GestureData | null;
   clearCanvas: () => void;
   calculateGestureParams: (start: Point, end: Point, canvasHeight: number) => GestureParams;
   getCanvasPoint: (clientX: number, clientY: number) => Point;
@@ -83,6 +84,8 @@ export function useGestureCanvas(): GestureCanvasHook {
   const [isDrawing, setIsDrawing] = useState(false);
   const [currentPath, setCurrentPath] = useState<Point[]>([]);
   const startPointRef = useRef<Point | null>(null);
+  // マルチタッチ制御: 最初のタッチのpointerIdを追跡
+  const activePointerIdRef = useRef<number | null>(null);
 
   /**
    * クライアント座標をキャンバス座標に変換する
@@ -113,6 +116,7 @@ export function useGestureCanvas(): GestureCanvasHook {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     setCurrentPath([]);
     startPointRef.current = null;
+    activePointerIdRef.current = null;
   }, []);
 
   /**
@@ -168,9 +172,18 @@ export function useGestureCanvas(): GestureCanvasHook {
 
   /**
    * ポインターダウンイベントハンドラ
+   * マルチタッチ時は最初のタッチポイントのみを追跡
    */
   const handlePointerDown = useCallback(
     (e: React.PointerEvent<HTMLCanvasElement>): void => {
+      // マルチタッチ制御: 既にアクティブなポインターがある場合は無視
+      if (activePointerIdRef.current !== null) {
+        return;
+      }
+
+      // 最初のタッチのpointerIdを記録
+      activePointerIdRef.current = e.pointerId;
+
       const point = getCanvasPoint(e.clientX, e.clientY);
       startPointRef.current = point;
       setIsDrawing(true);
@@ -193,10 +206,12 @@ export function useGestureCanvas(): GestureCanvasHook {
 
   /**
    * ポインタームーブイベントハンドラ
+   * マルチタッチ時は最初のタッチポイントのみを追跡
    */
   const handlePointerMove = useCallback(
     (e: React.PointerEvent<HTMLCanvasElement>): void => {
-      if (!isDrawing) return;
+      // マルチタッチ制御: アクティブなポインター以外は無視
+      if (!isDrawing || e.pointerId !== activePointerIdRef.current) return;
 
       const point = getCanvasPoint(e.clientX, e.clientY);
       const newPath = [...currentPath, point];
@@ -227,11 +242,18 @@ export function useGestureCanvas(): GestureCanvasHook {
 
   /**
    * ポインターアップイベントハンドラ
+   * マルチタッチ時は最初のタッチポイントのみを処理
    */
   const handlePointerUp = useCallback(
     (e: React.PointerEvent<HTMLCanvasElement>): GestureData | null => {
+      // マルチタッチ制御: アクティブなポインター以外は無視
+      if (e.pointerId !== activePointerIdRef.current) {
+        return null;
+      }
+
       if (!isDrawing || !startPointRef.current) {
         setIsDrawing(false);
+        activePointerIdRef.current = null;
         return null;
       }
 
@@ -257,10 +279,73 @@ export function useGestureCanvas(): GestureCanvasHook {
       };
 
       setIsDrawing(false);
+      activePointerIdRef.current = null;
 
       return gestureData;
     },
     [isDrawing, currentPath, getCanvasPoint]
+  );
+
+  /**
+   * キャンバス座標をキャンバス境界内にクランプする
+   */
+  const clampToCanvas = useCallback((point: Point): Point => {
+    const canvas = canvasRef.current;
+    if (!canvas) {
+      return point;
+    }
+
+    return {
+      x: Math.max(0, Math.min(point.x, canvas.width)),
+      y: Math.max(0, Math.min(point.y, canvas.height)),
+    };
+  }, []);
+
+  /**
+   * ポインターリーブイベントハンドラ
+   * キャンバス外へドラッグした場合にジェスチャーを正常に完了させる
+   * マルチタッチ時は最初のタッチポイントのみを処理
+   */
+  const handlePointerLeave = useCallback(
+    (e: React.PointerEvent<HTMLCanvasElement>): GestureData | null => {
+      // マルチタッチ制御: アクティブなポインター以外は無視
+      if (e.pointerId !== activePointerIdRef.current) {
+        return null;
+      }
+
+      if (!isDrawing || !startPointRef.current) {
+        return null;
+      }
+
+      // キャンバス外の座標をキャンバス境界にクランプ
+      const rawPoint = getCanvasPoint(e.clientX, e.clientY);
+      const endPoint = clampToCanvas(rawPoint);
+      const startPoint = startPointRef.current;
+      const path = [...currentPath, endPoint];
+
+      // 直線距離を計算
+      const dx = endPoint.x - startPoint.x;
+      const dy = endPoint.y - startPoint.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+
+      // 累積距離と総線分長を計算
+      const { pathLength, cumulativeDistances } = calculatePathMetrics(path);
+
+      const gestureData: GestureData = {
+        startPoint,
+        endPoint,
+        path,
+        distance,
+        pathLength,
+        cumulativeDistances,
+      };
+
+      setIsDrawing(false);
+      activePointerIdRef.current = null;
+
+      return gestureData;
+    },
+    [isDrawing, currentPath, getCanvasPoint, clampToCanvas]
   );
 
   return {
@@ -270,6 +355,7 @@ export function useGestureCanvas(): GestureCanvasHook {
     handlePointerDown,
     handlePointerMove,
     handlePointerUp,
+    handlePointerLeave,
     clearCanvas,
     calculateGestureParams,
     getCanvasPoint,

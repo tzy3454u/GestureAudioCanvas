@@ -281,4 +281,38 @@ describe('AudioSelector', () => {
       expect(mockOnLoadingChange).toHaveBeenCalledWith(true);
     });
   });
+
+  describe('レスポンシブ対応 (Requirement 3.3, 4.4)', () => {
+    it('ボタンのStackにレスポンシブなdirectionが設定されていること', () => {
+      render(
+        <AudioSelector
+          onAudioLoaded={mockOnAudioLoaded}
+          onError={mockOnError}
+        />
+      );
+
+      // ボタンを含むStackコンポーネントを取得
+      const sampleButton = screen.getByRole('button', { name: /サンプル音源/i });
+      const buttonContainer = sampleButton.parentElement;
+
+      // MUI StackはdivとしてレンダリングされるためclassNameで確認
+      expect(buttonContainer).toHaveClass('MuiStack-root');
+    });
+
+    it('ボタンに最小高さ44pxが設定されていること（タップ領域確保）', () => {
+      render(
+        <AudioSelector
+          onAudioLoaded={mockOnAudioLoaded}
+          onError={mockOnError}
+        />
+      );
+
+      const sampleButton = screen.getByRole('button', { name: /サンプル音源/i });
+      const fileButton = screen.getByRole('button', { name: /ファイルを選択/i });
+
+      // MUIのsxで設定されたminHeightを確認
+      expect(sampleButton).toHaveStyle({ minHeight: '44px' });
+      expect(fileButton).toHaveStyle({ minHeight: '44px' });
+    });
+  });
 });

@@ -281,4 +281,430 @@ describe('useGestureCanvas', () => {
       expect(result.cumulativeDistances).toEqual([0, 5, 17]);
     });
   });
+
+  describe('マルチタッチ制御', () => {
+    it('最初のタッチポイントのみを追跡すること', () => {
+      const { result } = renderHook(() => useGestureCanvas());
+
+      // Mock canvas element
+      const mockCanvas = {
+        getContext: jest.fn().mockReturnValue(mockContext),
+        getBoundingClientRect: jest.fn().mockReturnValue({
+          left: 0,
+          top: 0,
+          width: 800,
+          height: 400,
+        }),
+        width: 800,
+        height: 400,
+      } as unknown as HTMLCanvasElement;
+
+      Object.defineProperty(result.current.canvasRef, 'current', {
+        value: mockCanvas,
+        writable: true,
+      });
+
+      // 最初のタッチ（pointerId: 1）でジェスチャー開始
+      const firstPointerDown = {
+        clientX: 100,
+        clientY: 100,
+        pointerId: 1,
+        isPrimary: true,
+      } as unknown as React.PointerEvent<HTMLCanvasElement>;
+
+      act(() => {
+        result.current.handlePointerDown(firstPointerDown);
+      });
+
+      expect(result.current.isDrawing).toBe(true);
+      expect(result.current.currentPath).toHaveLength(1);
+
+      // 2本目のタッチ（pointerId: 2）は無視されるべき
+      const secondPointerDown = {
+        clientX: 200,
+        clientY: 200,
+        pointerId: 2,
+        isPrimary: false,
+      } as unknown as React.PointerEvent<HTMLCanvasElement>;
+
+      act(() => {
+        result.current.handlePointerDown(secondPointerDown);
+      });
+
+      // 2本目のタッチは無視され、元のパスが維持される
+      expect(result.current.currentPath).toHaveLength(1);
+      expect(result.current.currentPath[0]).toEqual({ x: 100, y: 100 });
+    });
+
+    it('2本目のタッチでの移動は無視されること', () => {
+      const { result } = renderHook(() => useGestureCanvas());
+
+      // Mock canvas element
+      const mockCanvas = {
+        getContext: jest.fn().mockReturnValue(mockContext),
+        getBoundingClientRect: jest.fn().mockReturnValue({
+          left: 0,
+          top: 0,
+          width: 800,
+          height: 400,
+        }),
+        width: 800,
+        height: 400,
+      } as unknown as HTMLCanvasElement;
+
+      Object.defineProperty(result.current.canvasRef, 'current', {
+        value: mockCanvas,
+        writable: true,
+      });
+
+      // 最初のタッチ開始
+      const firstPointerDown = {
+        clientX: 100,
+        clientY: 100,
+        pointerId: 1,
+        isPrimary: true,
+      } as unknown as React.PointerEvent<HTMLCanvasElement>;
+
+      act(() => {
+        result.current.handlePointerDown(firstPointerDown);
+      });
+
+      // 最初のタッチで移動
+      const firstPointerMove = {
+        clientX: 150,
+        clientY: 150,
+        pointerId: 1,
+        isPrimary: true,
+      } as unknown as React.PointerEvent<HTMLCanvasElement>;
+
+      act(() => {
+        result.current.handlePointerMove(firstPointerMove);
+      });
+
+      expect(result.current.currentPath).toHaveLength(2);
+
+      // 2本目のタッチでの移動は無視
+      const secondPointerMove = {
+        clientX: 300,
+        clientY: 300,
+        pointerId: 2,
+        isPrimary: false,
+      } as unknown as React.PointerEvent<HTMLCanvasElement>;
+
+      act(() => {
+        result.current.handlePointerMove(secondPointerMove);
+      });
+
+      // パスの長さが変わらない
+      expect(result.current.currentPath).toHaveLength(2);
+      // 最後の点は最初のタッチの移動位置
+      expect(result.current.currentPath[1]).toEqual({ x: 150, y: 150 });
+    });
+
+    it('2本目のタッチでの離上は無視されること', () => {
+      const { result } = renderHook(() => useGestureCanvas());
+
+      // Mock canvas element
+      const mockCanvas = {
+        getContext: jest.fn().mockReturnValue(mockContext),
+        getBoundingClientRect: jest.fn().mockReturnValue({
+          left: 0,
+          top: 0,
+          width: 800,
+          height: 400,
+        }),
+        width: 800,
+        height: 400,
+      } as unknown as HTMLCanvasElement;
+
+      Object.defineProperty(result.current.canvasRef, 'current', {
+        value: mockCanvas,
+        writable: true,
+      });
+
+      // 最初のタッチ開始
+      const firstPointerDown = {
+        clientX: 100,
+        clientY: 100,
+        pointerId: 1,
+        isPrimary: true,
+      } as unknown as React.PointerEvent<HTMLCanvasElement>;
+
+      act(() => {
+        result.current.handlePointerDown(firstPointerDown);
+      });
+
+      // 2本目のタッチで離上してもジェスチャーは終了しない
+      const secondPointerUp = {
+        clientX: 200,
+        clientY: 200,
+        pointerId: 2,
+        isPrimary: false,
+      } as unknown as React.PointerEvent<HTMLCanvasElement>;
+
+      act(() => {
+        const gestureData = result.current.handlePointerUp(secondPointerUp);
+        // 2本目のタッチでは null を返す
+        expect(gestureData).toBeNull();
+      });
+
+      // ジェスチャーは継続中
+      expect(result.current.isDrawing).toBe(true);
+    });
+
+    it('最初のタッチの離上でジェスチャーが正常に完了すること', () => {
+      const { result } = renderHook(() => useGestureCanvas());
+
+      // Mock canvas element
+      const mockCanvas = {
+        getContext: jest.fn().mockReturnValue(mockContext),
+        getBoundingClientRect: jest.fn().mockReturnValue({
+          left: 0,
+          top: 0,
+          width: 800,
+          height: 400,
+        }),
+        width: 800,
+        height: 400,
+      } as unknown as HTMLCanvasElement;
+
+      Object.defineProperty(result.current.canvasRef, 'current', {
+        value: mockCanvas,
+        writable: true,
+      });
+
+      // 最初のタッチ開始
+      const firstPointerDown = {
+        clientX: 100,
+        clientY: 100,
+        pointerId: 1,
+        isPrimary: true,
+      } as unknown as React.PointerEvent<HTMLCanvasElement>;
+
+      act(() => {
+        result.current.handlePointerDown(firstPointerDown);
+      });
+
+      // 最初のタッチで離上
+      const firstPointerUp = {
+        clientX: 200,
+        clientY: 200,
+        pointerId: 1,
+        isPrimary: true,
+      } as unknown as React.PointerEvent<HTMLCanvasElement>;
+
+      let gestureData = null;
+      act(() => {
+        gestureData = result.current.handlePointerUp(firstPointerUp);
+      });
+
+      expect(gestureData).not.toBeNull();
+      expect(result.current.isDrawing).toBe(false);
+    });
+  });
+
+  describe('キャンバス外ドラッグ処理', () => {
+    it('handlePointerLeaveでジェスチャーが正常に完了すること', () => {
+      const { result } = renderHook(() => useGestureCanvas());
+
+      // Mock canvas element
+      const mockCanvas = {
+        getContext: jest.fn().mockReturnValue(mockContext),
+        getBoundingClientRect: jest.fn().mockReturnValue({
+          left: 0,
+          top: 0,
+          width: 800,
+          height: 400,
+        }),
+        width: 800,
+        height: 400,
+      } as unknown as HTMLCanvasElement;
+
+      Object.defineProperty(result.current.canvasRef, 'current', {
+        value: mockCanvas,
+        writable: true,
+      });
+
+      // ジェスチャー開始
+      const pointerDown = {
+        clientX: 100,
+        clientY: 100,
+        pointerId: 1,
+        isPrimary: true,
+      } as unknown as React.PointerEvent<HTMLCanvasElement>;
+
+      act(() => {
+        result.current.handlePointerDown(pointerDown);
+      });
+
+      // 移動
+      const pointerMove = {
+        clientX: 200,
+        clientY: 150,
+        pointerId: 1,
+        isPrimary: true,
+      } as unknown as React.PointerEvent<HTMLCanvasElement>;
+
+      act(() => {
+        result.current.handlePointerMove(pointerMove);
+      });
+
+      // キャンバス外へドラッグ（handlePointerLeave）
+      const pointerLeave = {
+        clientX: 850, // キャンバス外
+        clientY: 150,
+        pointerId: 1,
+        isPrimary: true,
+      } as unknown as React.PointerEvent<HTMLCanvasElement>;
+
+      let gestureData = null;
+      act(() => {
+        gestureData = result.current.handlePointerLeave(pointerLeave);
+      });
+
+      // ジェスチャーが正常に完了
+      expect(gestureData).not.toBeNull();
+      expect(result.current.isDrawing).toBe(false);
+    });
+
+    it('handlePointerLeaveで描画中でない場合はnullを返すこと', () => {
+      const { result } = renderHook(() => useGestureCanvas());
+
+      // Mock canvas element
+      const mockCanvas = {
+        getContext: jest.fn().mockReturnValue(mockContext),
+        getBoundingClientRect: jest.fn().mockReturnValue({
+          left: 0,
+          top: 0,
+          width: 800,
+          height: 400,
+        }),
+        width: 800,
+        height: 400,
+      } as unknown as HTMLCanvasElement;
+
+      Object.defineProperty(result.current.canvasRef, 'current', {
+        value: mockCanvas,
+        writable: true,
+      });
+
+      // 描画中でない状態でpointerLeave
+      const pointerLeave = {
+        clientX: 850,
+        clientY: 150,
+        pointerId: 1,
+        isPrimary: true,
+      } as unknown as React.PointerEvent<HTMLCanvasElement>;
+
+      let gestureData = null;
+      act(() => {
+        gestureData = result.current.handlePointerLeave(pointerLeave);
+      });
+
+      expect(gestureData).toBeNull();
+    });
+
+    it('handlePointerLeaveでキャンバス境界にクランプされた座標でジェスチャーが完了すること', () => {
+      const { result } = renderHook(() => useGestureCanvas());
+
+      // Mock canvas element
+      const mockCanvas = {
+        getContext: jest.fn().mockReturnValue(mockContext),
+        getBoundingClientRect: jest.fn().mockReturnValue({
+          left: 0,
+          top: 0,
+          width: 800,
+          height: 400,
+        }),
+        width: 800,
+        height: 400,
+      } as unknown as HTMLCanvasElement;
+
+      Object.defineProperty(result.current.canvasRef, 'current', {
+        value: mockCanvas,
+        writable: true,
+      });
+
+      // ジェスチャー開始
+      const pointerDown = {
+        clientX: 100,
+        clientY: 100,
+        pointerId: 1,
+        isPrimary: true,
+      } as unknown as React.PointerEvent<HTMLCanvasElement>;
+
+      act(() => {
+        result.current.handlePointerDown(pointerDown);
+      });
+
+      // キャンバス外へドラッグ（右側にはみ出し）
+      const pointerLeave = {
+        clientX: 1000, // キャンバスの右端（800）を超えている
+        clientY: 200,
+        pointerId: 1,
+        isPrimary: true,
+      } as unknown as React.PointerEvent<HTMLCanvasElement>;
+
+      let gestureData = null;
+      act(() => {
+        gestureData = result.current.handlePointerLeave(pointerLeave);
+      });
+
+      // 終点がキャンバス境界にクランプされる（x: 800, y: 200）
+      expect(gestureData).not.toBeNull();
+      expect(gestureData!.endPoint.x).toBe(800);
+      expect(gestureData!.endPoint.y).toBe(200);
+    });
+
+    it('2本目のタッチでのpointerLeaveは無視されること', () => {
+      const { result } = renderHook(() => useGestureCanvas());
+
+      // Mock canvas element
+      const mockCanvas = {
+        getContext: jest.fn().mockReturnValue(mockContext),
+        getBoundingClientRect: jest.fn().mockReturnValue({
+          left: 0,
+          top: 0,
+          width: 800,
+          height: 400,
+        }),
+        width: 800,
+        height: 400,
+      } as unknown as HTMLCanvasElement;
+
+      Object.defineProperty(result.current.canvasRef, 'current', {
+        value: mockCanvas,
+        writable: true,
+      });
+
+      // 最初のタッチ開始
+      const firstPointerDown = {
+        clientX: 100,
+        clientY: 100,
+        pointerId: 1,
+        isPrimary: true,
+      } as unknown as React.PointerEvent<HTMLCanvasElement>;
+
+      act(() => {
+        result.current.handlePointerDown(firstPointerDown);
+      });
+
+      // 2本目のタッチでのpointerLeaveは無視
+      const secondPointerLeave = {
+        clientX: 850,
+        clientY: 150,
+        pointerId: 2,
+        isPrimary: false,
+      } as unknown as React.PointerEvent<HTMLCanvasElement>;
+
+      let gestureData = null;
+      act(() => {
+        gestureData = result.current.handlePointerLeave(secondPointerLeave);
+      });
+
+      // ジェスチャーは継続中（nullが返され、isDrawingはtrue）
+      expect(gestureData).toBeNull();
+      expect(result.current.isDrawing).toBe(true);
+    });
+  });
 });
