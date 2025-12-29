@@ -18,6 +18,46 @@ export interface GestureData {
   endPoint: Point;
   path: Point[];
   distance: number;
+  /** 軌跡の総線分長（全セグメント長の合計） */
+  pathLength: number;
+  /** 各点の累積距離（始点からの距離）*/
+  cumulativeDistances: number[];
+}
+
+export interface PathMetrics {
+  pathLength: number;
+  cumulativeDistances: number[];
+}
+
+/**
+ * 軌跡の総線分長と累積距離配列を計算する
+ * @param path - 軌跡の点配列
+ * @returns pathLength（総線分長）とcumulativeDistances（累積距離配列）
+ */
+export function calculatePathMetrics(path: Point[]): PathMetrics {
+  if (path.length === 0) {
+    return { pathLength: 0, cumulativeDistances: [] };
+  }
+
+  if (path.length === 1) {
+    return { pathLength: 0, cumulativeDistances: [0] };
+  }
+
+  const cumulativeDistances: number[] = [0];
+  let totalLength = 0;
+
+  for (let i = 1; i < path.length; i++) {
+    const dx = path[i].x - path[i - 1].x;
+    const dy = path[i].y - path[i - 1].y;
+    const segmentLength = Math.sqrt(dx * dx + dy * dy);
+    totalLength += segmentLength;
+    cumulativeDistances.push(totalLength);
+  }
+
+  return {
+    pathLength: totalLength,
+    cumulativeDistances,
+  };
 }
 
 export interface GestureCanvasHook {
@@ -199,16 +239,21 @@ export function useGestureCanvas(): GestureCanvasHook {
       const startPoint = startPointRef.current;
       const path = [...currentPath, endPoint];
 
-      // 距離を計算
+      // 直線距離を計算（後方互換性のため維持）
       const dx = endPoint.x - startPoint.x;
       const dy = endPoint.y - startPoint.y;
       const distance = Math.sqrt(dx * dx + dy * dy);
+
+      // 累積距離と総線分長を計算
+      const { pathLength, cumulativeDistances } = calculatePathMetrics(path);
 
       const gestureData: GestureData = {
         startPoint,
         endPoint,
         path,
         distance,
+        pathLength,
+        cumulativeDistances,
       };
 
       setIsDrawing(false);

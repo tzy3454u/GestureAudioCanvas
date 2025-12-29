@@ -8,7 +8,7 @@ import { AuthGuard } from '@/components/AuthGuard';
 import { Header } from '@/components/Header';
 import { AudioSelector } from '@/components/AudioSelector';
 import { GestureCanvas } from '@/components/GestureCanvas';
-import { useAudioProcessor, PlaybackParams } from '@/hooks/useAudioProcessor';
+import { useAudioProcessor, DynamicPlaybackParams } from '@/hooks/useAudioProcessor';
 import { GestureData } from '@/hooks/useGestureCanvas';
 
 const CANVAS_WIDTH = 800;
@@ -29,11 +29,10 @@ export default function MainPage() {
     error: audioError,
     volume,
     setAudioBufferExternal,
-    playAudio,
     setVolumeLevel,
     calculateDurationRate,
-    calculatePitchRate,
-    isReversePlayback,
+    generatePitchCurve,
+    playAudioWithDynamicPitch,
   } = useAudioProcessor();
 
   // AudioProcessorのエラーを監視
@@ -73,28 +72,26 @@ export default function MainPage() {
     (gesture: GestureData) => {
       if (!audioBuffer) return;
 
-      // ジェスチャーからパラメータを計算
-      const xDelta = gesture.endPoint.x - gesture.startPoint.x;
-      const isReverse = isReversePlayback(xDelta);
+      // 軌跡総線分長から再生時間倍率を計算（pathLengthを使用）
+      const durationRate = calculateDurationRate(gesture.pathLength, CANVAS_WIDTH);
 
-      // Y座標を正規化（-1: 上端, 1: 下端）
-      const centerY = CANVAS_HEIGHT / 2;
-      const normalizedY = (gesture.startPoint.y - centerY) / centerY;
+      // 軌跡からピッチ曲線を生成
+      const pitchCurve = generatePitchCurve(gesture.path, CANVAS_HEIGHT);
 
-      // 再生パラメータを計算
-      const durationRate = calculateDurationRate(gesture.distance, CANVAS_WIDTH);
-      const pitchRate = calculatePitchRate(normalizedY);
+      // 再生時間を計算
+      const duration = durationRate * audioBuffer.duration;
 
-      const params: PlaybackParams = {
-        isReverse,
+      // 動的ピッチ再生パラメータ
+      const params: DynamicPlaybackParams = {
         durationRate,
-        pitchRate,
+        pitchCurve,
+        duration,
       };
 
-      // 音声を再生
-      playAudio(params);
+      // 動的ピッチで音声を再生（X座標方向に関わらず常に順再生）
+      playAudioWithDynamicPitch(params);
     },
-    [audioBuffer, calculateDurationRate, calculatePitchRate, isReversePlayback, playAudio]
+    [audioBuffer, calculateDurationRate, generatePitchCurve, playAudioWithDynamicPitch]
   );
 
   // エラーダイアログを閉じる

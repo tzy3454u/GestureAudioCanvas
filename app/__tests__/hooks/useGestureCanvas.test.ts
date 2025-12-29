@@ -1,7 +1,12 @@
 'use client';
 
 import { renderHook, act } from '@testing-library/react';
-import { useGestureCanvas, Point, GestureParams } from '@/hooks/useGestureCanvas';
+import {
+  useGestureCanvas,
+  Point,
+  GestureParams,
+  calculatePathMetrics,
+} from '@/hooks/useGestureCanvas';
 
 // Mock canvas context
 const mockClearRect = jest.fn();
@@ -188,6 +193,92 @@ describe('useGestureCanvas', () => {
       // 200 - 100 = 100, 150 - 50 = 100
       expect(point.x).toBe(100);
       expect(point.y).toBe(100);
+    });
+  });
+
+  describe('calculatePathMetrics', () => {
+    it('空の配列で0を返すこと', () => {
+      const result = calculatePathMetrics([]);
+      expect(result.pathLength).toBe(0);
+      expect(result.cumulativeDistances).toEqual([]);
+    });
+
+    it('1点のみで0を返すこと', () => {
+      const path: Point[] = [{ x: 100, y: 100 }];
+      const result = calculatePathMetrics(path);
+      expect(result.pathLength).toBe(0);
+      expect(result.cumulativeDistances).toEqual([0]);
+    });
+
+    it('2点間の直線距離を正確に計算すること', () => {
+      const path: Point[] = [
+        { x: 0, y: 0 },
+        { x: 30, y: 40 },
+      ];
+      const result = calculatePathMetrics(path);
+      // ピタゴラスの定理: sqrt(30^2 + 40^2) = 50
+      expect(result.pathLength).toBe(50);
+      expect(result.cumulativeDistances).toEqual([0, 50]);
+    });
+
+    it('3点の軌跡で累積距離を正確に計算すること', () => {
+      const path: Point[] = [
+        { x: 0, y: 0 },
+        { x: 30, y: 40 }, // 距離50
+        { x: 30, y: 140 }, // 追加距離100
+      ];
+      const result = calculatePathMetrics(path);
+      expect(result.pathLength).toBe(150);
+      expect(result.cumulativeDistances).toEqual([0, 50, 150]);
+    });
+
+    it('曲線軌跡が直線距離より長いこと', () => {
+      // 始点(0,0)から終点(100,0)への曲線と直線を比較
+      const straightPath: Point[] = [
+        { x: 0, y: 0 },
+        { x: 100, y: 0 },
+      ];
+      const curvedPath: Point[] = [
+        { x: 0, y: 0 },
+        { x: 50, y: 50 }, // 迂回
+        { x: 100, y: 0 },
+      ];
+
+      const straightResult = calculatePathMetrics(straightPath);
+      const curvedResult = calculatePathMetrics(curvedPath);
+
+      expect(curvedResult.pathLength).toBeGreaterThan(straightResult.pathLength);
+    });
+
+    it('累積距離配列の最初の要素が0であること', () => {
+      const path: Point[] = [
+        { x: 0, y: 0 },
+        { x: 10, y: 0 },
+        { x: 20, y: 0 },
+      ];
+      const result = calculatePathMetrics(path);
+      expect(result.cumulativeDistances[0]).toBe(0);
+    });
+
+    it('累積距離配列の最後の要素がpathLengthと等しいこと', () => {
+      const path: Point[] = [
+        { x: 0, y: 0 },
+        { x: 30, y: 40 },
+        { x: 30, y: 140 },
+      ];
+      const result = calculatePathMetrics(path);
+      expect(result.cumulativeDistances[result.cumulativeDistances.length - 1]).toBe(result.pathLength);
+    });
+
+    it('各セグメント間のユークリッド距離を正確に計算すること', () => {
+      const path: Point[] = [
+        { x: 0, y: 0 },
+        { x: 3, y: 4 }, // 距離5
+        { x: 3, y: 16 }, // 追加距離12
+      ];
+      const result = calculatePathMetrics(path);
+      expect(result.pathLength).toBe(17);
+      expect(result.cumulativeDistances).toEqual([0, 5, 17]);
     });
   });
 });

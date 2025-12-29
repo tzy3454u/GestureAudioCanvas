@@ -30,7 +30,7 @@ class MockAudioBuffer {
 
 class MockAudioBufferSourceNode {
   buffer: AudioBuffer | null = null;
-  playbackRate = { value: 1 };
+  playbackRate = { value: 1, setValueCurveAtTime: jest.fn() };
   onended: (() => void) | null = null;
 
   connect(): void {}
@@ -109,7 +109,6 @@ describe('useAudioProcessor', () => {
       const { result } = renderHook(() => useAudioProcessor());
 
       expect(result.current.audioBuffer).toBeNull();
-      expect(result.current.reversedBuffer).toBeNull();
       expect(result.current.isLoading).toBe(false);
       expect(result.current.isPlaying).toBe(false);
       expect(result.current.error).toBeNull();
@@ -157,15 +156,6 @@ describe('useAudioProcessor', () => {
       expect(result.current.error).toBeNull();
     });
 
-    it('サンプル音源ロード完了後にreversedBufferも生成される', async () => {
-      const { result } = renderHook(() => useAudioProcessor());
-
-      await act(async () => {
-        await result.current.loadSampleAudio();
-      });
-
-      expect(result.current.reversedBuffer).not.toBeNull();
-    });
   });
 
   describe('音声ファイルのロードとデコード', () => {
@@ -240,60 +230,66 @@ describe('useAudioProcessor', () => {
     });
   });
 
-  describe('逆再生用AudioBufferの生成', () => {
-    it('loadSampleAudio後にreversedBufferが生成されている', async () => {
-      const { result } = renderHook(() => useAudioProcessor());
-
-      await act(async () => {
-        await result.current.loadSampleAudio();
-      });
-
-      expect(result.current.reversedBuffer).not.toBeNull();
-    });
-  });
-
   describe('再生パラメータ計算', () => {
     describe('calculateDurationRate', () => {
-      it('キャンバス幅の半分の線の長さで1.0（元の長さ）を返す', () => {
+      it('キャンバス幅の半分の軌跡総線分長で1.0（元の長さ）を返す', () => {
         const { result } = renderHook(() => useAudioProcessor());
-        // canvasWidth = 800, distance = 400 (半分) → durationRate = 1.0
+        // canvasWidth = 800, pathLength = 400 (半分) → durationRate = 1.0
         expect(result.current.calculateDurationRate(400, 800)).toBe(1.0);
       });
 
-      it('キャンバス幅と同じ線の長さで2.0（2倍の長さ）を返す', () => {
+      it('キャンバス幅と同じ軌跡総線分長で2.0（2倍の長さ）を返す', () => {
         const { result } = renderHook(() => useAudioProcessor());
-        // canvasWidth = 800, distance = 800 → durationRate = 2.0
+        // canvasWidth = 800, pathLength = 800 → durationRate = 2.0
         expect(result.current.calculateDurationRate(800, 800)).toBe(2.0);
       });
 
-      it('キャンバス幅の1/4の線の長さで0.5（半分の長さ）を返す', () => {
+      it('キャンバス幅の1/4の軌跡総線分長で0.5（半分の長さ）を返す', () => {
         const { result } = renderHook(() => useAudioProcessor());
-        // canvasWidth = 800, distance = 200 (1/4) → durationRate = 0.5
+        // canvasWidth = 800, pathLength = 200 (1/4) → durationRate = 0.5
         expect(result.current.calculateDurationRate(200, 800)).toBe(0.5);
       });
 
-      it('0pxの線の長さで0を返す', () => {
+      it('0pxの軌跡総線分長で0を返す', () => {
         const { result } = renderHook(() => useAudioProcessor());
         expect(result.current.calculateDurationRate(0, 800)).toBe(0);
       });
 
       it('キャンバス幅が0以下の場合はデフォルト値800を使用する', () => {
         const { result } = renderHook(() => useAudioProcessor());
-        // canvasWidth = 0, distance = 400 → デフォルト800を使用 → 400/400 = 1.0
+        // canvasWidth = 0, pathLength = 400 → デフォルト800を使用 → 400/400 = 1.0
         expect(result.current.calculateDurationRate(400, 0)).toBe(1.0);
         expect(result.current.calculateDurationRate(400, -100)).toBe(1.0);
       });
 
       it('異なるキャンバスサイズでも線形比率を維持する', () => {
         const { result } = renderHook(() => useAudioProcessor());
-        // canvasWidth = 1200, distance = 600 (半分) → durationRate = 1.0
+        // canvasWidth = 1200, pathLength = 600 (半分) → durationRate = 1.0
         expect(result.current.calculateDurationRate(600, 1200)).toBe(1.0);
-        // canvasWidth = 400, distance = 200 (半分) → durationRate = 1.0
+        // canvasWidth = 400, pathLength = 200 (半分) → durationRate = 1.0
         expect(result.current.calculateDurationRate(200, 400)).toBe(1.0);
+      });
+
+      it('曲線軌跡は直線より長い総線分長を持つため、より長い再生時間倍率を返す', () => {
+        const { result } = renderHook(() => useAudioProcessor());
+        // 曲線軌跡: 始点(0,0)→終点(400,0)の直線距離=400
+        // 曲線を通ると仮定した総線分長=600
+        const straightDistance = 400;
+        const curvePathLength = 600;
+        const canvasWidth = 800;
+
+        const straightDuration = result.current.calculateDurationRate(straightDistance, canvasWidth);
+        const curveDuration = result.current.calculateDurationRate(curvePathLength, canvasWidth);
+
+        // 曲線軌跡の方が長い再生時間倍率を持つ
+        expect(curveDuration).toBeGreaterThan(straightDuration);
+        // 直線: 400/400 = 1.0, 曲線: 600/400 = 1.5
+        expect(straightDuration).toBe(1.0);
+        expect(curveDuration).toBe(1.5);
       });
     });
 
-    describe('calculatePitchRate', () => {
+    describe('calculatePitchRate（旧API - 後方互換性）', () => {
       it('キャンバス中央（normalizedY = 0）で1.0を返す', () => {
         const { result } = renderHook(() => useAudioProcessor());
         expect(result.current.calculatePitchRate(0)).toBe(1.0);
@@ -316,77 +312,258 @@ describe('useAudioProcessor', () => {
       });
     });
 
-    describe('isReverse判定', () => {
-      it('xDeltaが正（右向き）の場合はfalse（順再生）を返す', () => {
+    describe('calculatePitchFromY（新API - Y座標ベース）', () => {
+      it('キャンバス上端（Y=0）で最大ピッチ5.0を返す', () => {
         const { result } = renderHook(() => useAudioProcessor());
-        expect(result.current.isReversePlayback(50)).toBe(false);
+        expect(result.current.calculatePitchFromY(0, 600)).toBe(5.0);
       });
 
-      it('xDeltaが負（左向き）の場合はtrue（逆再生）を返す', () => {
+      it('キャンバス下端（Y=canvasHeight）で最小ピッチ1.0を返す', () => {
         const { result } = renderHook(() => useAudioProcessor());
-        expect(result.current.isReversePlayback(-50)).toBe(true);
+        expect(result.current.calculatePitchFromY(600, 600)).toBe(1.0);
       });
 
-      it('xDeltaが0の場合はfalse（順再生）を返す', () => {
+      it('キャンバス中央（Y=canvasHeight/2）で中間ピッチ3.0を返す', () => {
         const { result } = renderHook(() => useAudioProcessor());
-        expect(result.current.isReversePlayback(0)).toBe(false);
+        expect(result.current.calculatePitchFromY(300, 600)).toBe(3.0);
+      });
+
+      it('Y座標とピッチの関係が線形である', () => {
+        const { result } = renderHook(() => useAudioProcessor());
+        const canvasHeight = 600;
+        // Y=150 (1/4) → 5.0 - (0.25 * 4.0) = 4.0
+        expect(result.current.calculatePitchFromY(150, canvasHeight)).toBe(4.0);
+        // Y=450 (3/4) → 5.0 - (0.75 * 4.0) = 2.0
+        expect(result.current.calculatePitchFromY(450, canvasHeight)).toBe(2.0);
+      });
+
+      it('ピッチ値を1.0〜5.0の範囲にクランプする', () => {
+        const { result } = renderHook(() => useAudioProcessor());
+        // 負のY座標は5.0にクランプ
+        expect(result.current.calculatePitchFromY(-100, 600)).toBe(5.0);
+        // canvasHeightを超えるY座標は1.0にクランプ
+        expect(result.current.calculatePitchFromY(700, 600)).toBe(1.0);
+      });
+
+      it('canvasHeightが0以下の場合はデフォルト値を使用する', () => {
+        const { result } = renderHook(() => useAudioProcessor());
+        // canvasHeight=0の場合、デフォルトの600を想定
+        // Y=0はピッチ5.0を返す
+        expect(result.current.calculatePitchFromY(0, 0)).toBe(5.0);
+        expect(result.current.calculatePitchFromY(0, -100)).toBe(5.0);
       });
     });
+
+    describe('generatePitchCurve（ピッチ曲線生成）', () => {
+      it('軌跡からFloat32Arrayを返す', () => {
+        const { result } = renderHook(() => useAudioProcessor());
+        const path = [
+          { x: 0, y: 0 },
+          { x: 100, y: 300 },
+          { x: 200, y: 600 },
+        ];
+        const pitchCurve = result.current.generatePitchCurve(path, 600);
+        expect(pitchCurve).toBeInstanceOf(Float32Array);
+      });
+
+      it('デフォルトで100サンプルを生成する', () => {
+        const { result } = renderHook(() => useAudioProcessor());
+        const path = [
+          { x: 0, y: 0 },
+          { x: 100, y: 300 },
+          { x: 200, y: 600 },
+        ];
+        const pitchCurve = result.current.generatePitchCurve(path, 600);
+        expect(pitchCurve.length).toBe(100);
+      });
+
+      it('指定したサンプル数で生成できる', () => {
+        const { result } = renderHook(() => useAudioProcessor());
+        const path = [
+          { x: 0, y: 0 },
+          { x: 100, y: 600 },
+        ];
+        const pitchCurve = result.current.generatePitchCurve(path, 600, 50);
+        expect(pitchCurve.length).toBe(50);
+      });
+
+      it('全ての値が1.0〜5.0の範囲内である', () => {
+        const { result } = renderHook(() => useAudioProcessor());
+        const path = [
+          { x: 0, y: -100 }, // 範囲外（上）
+          { x: 100, y: 300 },
+          { x: 200, y: 700 }, // 範囲外（下）
+        ];
+        const pitchCurve = result.current.generatePitchCurve(path, 600);
+        for (let i = 0; i < pitchCurve.length; i++) {
+          expect(pitchCurve[i]).toBeGreaterThanOrEqual(1.0);
+          expect(pitchCurve[i]).toBeLessThanOrEqual(5.0);
+        }
+      });
+
+      it('上端から下端への軌跡は高音から低音へのピッチ曲線を生成', () => {
+        const { result } = renderHook(() => useAudioProcessor());
+        const path = [
+          { x: 0, y: 0 },   // 上端 → 5.0
+          { x: 100, y: 600 }, // 下端 → 1.0
+        ];
+        const pitchCurve = result.current.generatePitchCurve(path, 600, 10);
+        // 最初のピッチは5.0に近く、最後は1.0に近い
+        expect(pitchCurve[0]).toBeCloseTo(5.0, 1);
+        expect(pitchCurve[pitchCurve.length - 1]).toBeCloseTo(1.0, 1);
+        // ピッチは減少していく
+        expect(pitchCurve[0]).toBeGreaterThan(pitchCurve[pitchCurve.length - 1]);
+      });
+
+      it('下端から上端への軌跡は低音から高音へのピッチ曲線を生成', () => {
+        const { result } = renderHook(() => useAudioProcessor());
+        const path = [
+          { x: 0, y: 600 },  // 下端 → 1.0
+          { x: 100, y: 0 },  // 上端 → 5.0
+        ];
+        const pitchCurve = result.current.generatePitchCurve(path, 600, 10);
+        // 最初のピッチは1.0に近く、最後は5.0に近い
+        expect(pitchCurve[0]).toBeCloseTo(1.0, 1);
+        expect(pitchCurve[pitchCurve.length - 1]).toBeCloseTo(5.0, 1);
+        // ピッチは増加していく
+        expect(pitchCurve[0]).toBeLessThan(pitchCurve[pitchCurve.length - 1]);
+      });
+
+      it('空の軌跡の場合は中間ピッチ3.0で満たされた配列を返す', () => {
+        const { result } = renderHook(() => useAudioProcessor());
+        const pitchCurve = result.current.generatePitchCurve([], 600, 10);
+        expect(pitchCurve.length).toBe(10);
+        for (let i = 0; i < pitchCurve.length; i++) {
+          expect(pitchCurve[i]).toBe(3.0);
+        }
+      });
+
+      it('1点のみの軌跡の場合はその点のピッチで満たされた配列を返す', () => {
+        const { result } = renderHook(() => useAudioProcessor());
+        const path = [{ x: 0, y: 300 }]; // 中央 → 3.0
+        const pitchCurve = result.current.generatePitchCurve(path, 600, 10);
+        expect(pitchCurve.length).toBe(10);
+        for (let i = 0; i < pitchCurve.length; i++) {
+          expect(pitchCurve[i]).toBeCloseTo(3.0, 1);
+        }
+      });
+    });
+
   });
 
-  describe('音声再生', () => {
-    it('playAudioで音声を再生する', async () => {
+  describe('動的ピッチ再生（playAudioWithDynamicPitch）', () => {
+    it('動的ピッチで音声を再生する', async () => {
       const { result } = renderHook(() => useAudioProcessor());
 
       await act(async () => {
         await result.current.loadSampleAudio();
       });
 
+      const pitchCurve = new Float32Array([5.0, 4.0, 3.0, 2.0, 1.0]);
       act(() => {
-        result.current.playAudio({
-          isReverse: false,
+        result.current.playAudioWithDynamicPitch({
           durationRate: 1.0,
-          pitchRate: 1.0,
+          pitchCurve,
+          duration: 5.0,
         });
       });
 
       expect(result.current.isPlaying).toBe(true);
     });
 
-    it('再生中はisPlayingがtrueになる', async () => {
+    it('AudioBufferがない場合はエラーを設定する', () => {
       const { result } = renderHook(() => useAudioProcessor());
 
-      await act(async () => {
-        await result.current.loadSampleAudio();
-      });
-
+      const pitchCurve = new Float32Array([3.0, 3.0, 3.0]);
       act(() => {
-        result.current.playAudio({
-          isReverse: false,
+        result.current.playAudioWithDynamicPitch({
           durationRate: 1.0,
-          pitchRate: 1.0,
-        });
-      });
-
-      expect(result.current.isPlaying).toBe(true);
-    });
-
-    it('音声がロードされていない場合はエラーになる', () => {
-      const { result } = renderHook(() => useAudioProcessor());
-
-      // AudioContextを初期化せずに再生を試みる
-      act(() => {
-        result.current.playAudio({
-          isReverse: false,
-          durationRate: 1.0,
-          pitchRate: 1.0,
+          pitchCurve,
+          duration: 5.0,
         });
       });
 
       expect(result.current.error).not.toBeNull();
     });
 
-    it('逆再生の場合はreversedBufferが使用される', async () => {
+    it('setValueCurveAtTimeを使用してピッチ曲線を適用する', async () => {
+      const setValueCurveAtTimeMock = jest.fn();
+
+      // MockAudioBufferSourceNodeにsetValueCurveAtTimeを追加
+      const originalCreateBufferSource = MockAudioContext.prototype.createBufferSource;
+      MockAudioContext.prototype.createBufferSource = function() {
+        const source = originalCreateBufferSource.call(this);
+        source.playbackRate = {
+          value: 1,
+          setValueCurveAtTime: setValueCurveAtTimeMock,
+        };
+        return source;
+      };
+
+      const { result } = renderHook(() => useAudioProcessor());
+
+      await act(async () => {
+        await result.current.loadSampleAudio();
+      });
+
+      const pitchCurve = new Float32Array([5.0, 3.0, 1.0]);
+      act(() => {
+        result.current.playAudioWithDynamicPitch({
+          durationRate: 1.0,
+          pitchCurve,
+          duration: 5.0,
+        });
+      });
+
+      expect(setValueCurveAtTimeMock).toHaveBeenCalled();
+      const callArgs = setValueCurveAtTimeMock.mock.calls[0];
+      expect(callArgs[0]).toBeInstanceOf(Float32Array);
+      expect(callArgs[0].length).toBe(3);
+
+      // モックを元に戻す
+      MockAudioContext.prototype.createBufferSource = originalCreateBufferSource;
+    });
+
+    it('durationRateに基づいて再生時間を計算する', async () => {
+      const startMock = jest.fn();
+
+      const originalCreateBufferSource = MockAudioContext.prototype.createBufferSource;
+      MockAudioContext.prototype.createBufferSource = function() {
+        const source = originalCreateBufferSource.call(this);
+        source.playbackRate = {
+          value: 1,
+          setValueCurveAtTime: jest.fn(),
+        };
+        source.start = startMock;
+        return source;
+      };
+
+      const { result } = renderHook(() => useAudioProcessor());
+
+      await act(async () => {
+        await result.current.loadSampleAudio();
+      });
+
+      const pitchCurve = new Float32Array([3.0, 3.0, 3.0]);
+      act(() => {
+        result.current.playAudioWithDynamicPitch({
+          durationRate: 0.5,
+          pitchCurve,
+          duration: 2.5, // 5秒の半分
+        });
+      });
+
+      expect(startMock).toHaveBeenCalled();
+      // start(when, offset, duration)の3番目の引数がduration
+      const callArgs = startMock.mock.calls[0];
+      expect(callArgs[2]).toBeLessThanOrEqual(2.5);
+
+      MockAudioContext.prototype.createBufferSource = originalCreateBufferSource;
+    });
+  });
+
+  describe('静的ピッチ再生（playAudioWithStaticPitch）', () => {
+    it('静的ピッチで音声を再生する', async () => {
       const { result } = renderHook(() => useAudioProcessor());
 
       await act(async () => {
@@ -394,16 +571,94 @@ describe('useAudioProcessor', () => {
       });
 
       act(() => {
-        result.current.playAudio({
-          isReverse: true,
+        result.current.playAudioWithStaticPitch({
           durationRate: 1.0,
-          pitchRate: 1.0,
+          pitchRate: 2.5,
         });
       });
 
       expect(result.current.isPlaying).toBe(true);
     });
 
+    it('AudioBufferがない場合はエラーを設定する', () => {
+      const { result } = renderHook(() => useAudioProcessor());
+
+      act(() => {
+        result.current.playAudioWithStaticPitch({
+          durationRate: 1.0,
+          pitchRate: 2.5,
+        });
+      });
+
+      expect(result.current.error).not.toBeNull();
+    });
+
+    it('指定されたpitchRateをplaybackRateに設定する', async () => {
+      const { result } = renderHook(() => useAudioProcessor());
+
+      await act(async () => {
+        await result.current.loadSampleAudio();
+      });
+
+      // 新たなモック設定
+      let capturedPlaybackRate = 0;
+      const originalCreateBufferSource = MockAudioContext.prototype.createBufferSource;
+      MockAudioContext.prototype.createBufferSource = function() {
+        const source = originalCreateBufferSource.call(this);
+        const playbackRate = {
+          _value: 1,
+          get value() { return this._value; },
+          set value(v: number) { capturedPlaybackRate = v; this._value = v; },
+        };
+        Object.defineProperty(source, 'playbackRate', { value: playbackRate });
+        return source;
+      };
+
+      act(() => {
+        result.current.playAudioWithStaticPitch({
+          durationRate: 1.0,
+          pitchRate: 3.5,
+        });
+      });
+
+      expect(capturedPlaybackRate).toBe(3.5);
+
+      MockAudioContext.prototype.createBufferSource = originalCreateBufferSource;
+    });
+
+    it('常に順再生（audioBufferを使用）する', async () => {
+      const { result } = renderHook(() => useAudioProcessor());
+
+      await act(async () => {
+        await result.current.loadSampleAudio();
+      });
+
+      let usedBuffer: AudioBuffer | null = null;
+      const originalCreateBufferSource = MockAudioContext.prototype.createBufferSource;
+      MockAudioContext.prototype.createBufferSource = function() {
+        const source = originalCreateBufferSource.call(this);
+        Object.defineProperty(source, 'buffer', {
+          set(v) { usedBuffer = v; },
+          get() { return usedBuffer; },
+        });
+        return source;
+      };
+
+      act(() => {
+        result.current.playAudioWithStaticPitch({
+          durationRate: 1.0,
+          pitchRate: 2.0,
+        });
+      });
+
+      // audioBuffer（順再生用）が使用されている
+      expect(usedBuffer).toBe(result.current.audioBuffer);
+
+      MockAudioContext.prototype.createBufferSource = originalCreateBufferSource;
+    });
+  });
+
+  describe('stopAudio', () => {
     it('stopAudioで再生を停止できる', async () => {
       const { result } = renderHook(() => useAudioProcessor());
 
@@ -412,8 +667,7 @@ describe('useAudioProcessor', () => {
       });
 
       act(() => {
-        result.current.playAudio({
-          isReverse: false,
+        result.current.playAudioWithStaticPitch({
           durationRate: 1.0,
           pitchRate: 1.0,
         });

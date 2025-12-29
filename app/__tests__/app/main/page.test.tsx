@@ -32,19 +32,28 @@ jest.mock('next/navigation', () => ({
 }));
 
 // useAudioProcessorのモック
-const mockPlayAudio = jest.fn();
+const mockPlayAudioWithDynamicPitch = jest.fn();
+const mockPlayAudioWithStaticPitch = jest.fn();
 const mockLoadSampleAudio = jest.fn();
 const mockLoadAudioFile = jest.fn();
 const mockInitializeAudioContext = jest.fn();
 
-const mockCalculateDurationRate = jest.fn((distance: number, canvasWidth: number) => {
+const mockCalculateDurationRate = jest.fn((pathLength: number, canvasWidth: number) => {
   const baseDistance = canvasWidth / 2;
-  return distance / baseDistance;
+  return pathLength / baseDistance;
+});
+
+const mockCalculatePitchFromY = jest.fn((y: number, canvasHeight: number) => {
+  const normalizedY = Math.max(0, Math.min(1, y / canvasHeight));
+  return 5.0 - (normalizedY * 4.0);
+});
+
+const mockGeneratePitchCurve = jest.fn((path: Array<{x: number; y: number}>, canvasHeight: number, sampleCount = 100) => {
+  return new Float32Array(sampleCount).fill(3.0);
 });
 
 const mockUseAudioProcessor = {
   audioBuffer: null,
-  reversedBuffer: null,
   isLoading: false,
   isPlaying: false,
   error: null,
@@ -53,12 +62,14 @@ const mockUseAudioProcessor = {
   loadAudioFile: mockLoadAudioFile,
   loadSampleAudio: mockLoadSampleAudio,
   setAudioBufferExternal: jest.fn(),
-  playAudio: mockPlayAudio,
   stopAudio: jest.fn(),
   setVolumeLevel: jest.fn(),
   calculateDurationRate: mockCalculateDurationRate,
   calculatePitchRate: jest.fn((normalizedY: number) => Math.pow(2, normalizedY * 2)),
-  isReversePlayback: jest.fn((xDelta: number) => xDelta < 0),
+  calculatePitchFromY: mockCalculatePitchFromY,
+  generatePitchCurve: mockGeneratePitchCurve,
+  playAudioWithDynamicPitch: mockPlayAudioWithDynamicPitch,
+  playAudioWithStaticPitch: mockPlayAudioWithStaticPitch,
 };
 
 jest.mock('@/hooks/useAudioProcessor', () => ({
@@ -84,7 +95,14 @@ jest.mock('@/hooks/useGestureCanvas', () => ({
 }));
 
 // GestureCanvasモックのonGestureCompleteをキャプチャ
-type GestureDataType = { startPoint: { x: number; y: number }; endPoint: { x: number; y: number }; distance: number };
+type GestureDataType = {
+  startPoint: { x: number; y: number };
+  endPoint: { x: number; y: number };
+  path: { x: number; y: number }[];
+  distance: number;
+  pathLength: number;
+  cumulativeDistances: number[];
+};
 let capturedOnGestureComplete: ((gesture: GestureDataType) => void) | null = null;
 
 jest.mock('@/components/GestureCanvas', () => ({
@@ -110,6 +128,7 @@ describe('MainPage', () => {
     mockUseAudioProcessor.isLoading = false;
     mockUseAudioProcessor.isPlaying = false;
     mockUseAudioProcessor.error = null;
+    capturedOnGestureComplete = null;
   });
 
   describe('Task 6.1: メインページのレイアウト構成', () => {
@@ -207,19 +226,38 @@ describe('MainPage', () => {
     });
   });
 
-  describe('Task 6.3: ジェスチャーから音声再生への連携', () => {
-    it('ジェスチャー完了時にパラメータを計算して再生をトリガーする', async () => {
+  describe('Task 6.3: ジェスチャーから音声再生への連携（動的ピッチ対応）', () => {
+    it('ジェスチャー完了時にpathLengthとパスを使って動的ピッチパラメータを計算して再生をトリガーする', async () => {
       const mockBuffer = { duration: 5, sampleRate: 44100, numberOfChannels: 1, length: 220500, getChannelData: jest.fn() } as unknown as AudioBuffer;
       mockUseAudioProcessor.audioBuffer = mockBuffer;
-      mockUseAudioProcessor.reversedBuffer = mockBuffer;
 
       render(<MainPage />);
 
-      // onGestureComplete コールバックをシミュレート
-      // 実際のテストではGestureCanvasからのコールバックをトリガーする
+      // ジェスチャー完了をシミュレート（pathLengthとパスを含む）
+      const gesture: GestureDataType = {
+        startPoint: { x: 100, y: 200 },
+        endPoint: { x: 500, y: 200 },
+        path: [
+          { x: 100, y: 200 },
+          { x: 300, y: 100 },
+          { x: 500, y: 200 },
+        ],
+        distance: 400,
+        pathLength: 450, // 曲線なので直線より長い
+        cumulativeDistances: [0, 250, 450],
+      };
+
+      act(() => {
+        if (capturedOnGestureComplete) {
+          capturedOnGestureComplete(gesture);
+        }
+      });
+
+      // playAudioWithDynamicPitchが呼ばれることを検証
+      expect(mockPlayAudioWithDynamicPitch).toHaveBeenCalled();
     });
 
-    it('calculateDurationRateにキャンバス幅（CANVAS_WIDTH=800）を渡す', () => {
+    it('calculateDurationRateにpathLength（総線分長）とキャンバス幅を渡す', () => {
       const mockBuffer = { duration: 5, sampleRate: 44100, numberOfChannels: 1, length: 220500, getChannelData: jest.fn() } as unknown as AudioBuffer;
       mockUseAudioProcessor.audioBuffer = mockBuffer;
 
@@ -229,7 +267,14 @@ describe('MainPage', () => {
       const gesture: GestureDataType = {
         startPoint: { x: 100, y: 200 },
         endPoint: { x: 500, y: 200 },
+        path: [
+          { x: 100, y: 200 },
+          { x: 300, y: 100 },
+          { x: 500, y: 200 },
+        ],
         distance: 400,
+        pathLength: 450,
+        cumulativeDistances: [0, 250, 450],
       };
 
       act(() => {
@@ -238,8 +283,69 @@ describe('MainPage', () => {
         }
       });
 
-      // calculateDurationRateがdistance=400, canvasWidth=800で呼ばれることを検証
-      expect(mockCalculateDurationRate).toHaveBeenCalledWith(400, 800);
+      // calculateDurationRateがpathLength=450, canvasWidth=800で呼ばれることを検証
+      expect(mockCalculateDurationRate).toHaveBeenCalledWith(450, 800);
+    });
+
+    it('generatePitchCurveにパスとキャンバス高さを渡してピッチ曲線を生成する', () => {
+      const mockBuffer = { duration: 5, sampleRate: 44100, numberOfChannels: 1, length: 220500, getChannelData: jest.fn() } as unknown as AudioBuffer;
+      mockUseAudioProcessor.audioBuffer = mockBuffer;
+
+      render(<MainPage />);
+
+      const path = [
+        { x: 100, y: 200 },
+        { x: 300, y: 100 },
+        { x: 500, y: 200 },
+      ];
+
+      const gesture: GestureDataType = {
+        startPoint: { x: 100, y: 200 },
+        endPoint: { x: 500, y: 200 },
+        path,
+        distance: 400,
+        pathLength: 450,
+        cumulativeDistances: [0, 250, 450],
+      };
+
+      act(() => {
+        if (capturedOnGestureComplete) {
+          capturedOnGestureComplete(gesture);
+        }
+      });
+
+      // generatePitchCurveがパスとキャンバス高さ（CANVAS_HEIGHT=400）で呼ばれることを検証
+      expect(mockGeneratePitchCurve).toHaveBeenCalledWith(path, 400);
+    });
+
+    it('X座標の方向に関わらず常に順再生する（逆再生なし）', () => {
+      const mockBuffer = { duration: 5, sampleRate: 44100, numberOfChannels: 1, length: 220500, getChannelData: jest.fn() } as unknown as AudioBuffer;
+      mockUseAudioProcessor.audioBuffer = mockBuffer;
+
+      render(<MainPage />);
+
+      // 左方向へのジェスチャー（以前は逆再生だった）
+      const gesture: GestureDataType = {
+        startPoint: { x: 500, y: 200 },
+        endPoint: { x: 100, y: 200 },
+        path: [
+          { x: 500, y: 200 },
+          { x: 100, y: 200 },
+        ],
+        distance: 400,
+        pathLength: 400,
+        cumulativeDistances: [0, 400],
+      };
+
+      act(() => {
+        if (capturedOnGestureComplete) {
+          capturedOnGestureComplete(gesture);
+        }
+      });
+
+      // 順再生API（playAudioWithDynamicPitch）が呼ばれる
+      expect(mockPlayAudioWithDynamicPitch).toHaveBeenCalled();
+      // 逆再生APIは呼ばれない（旧APIはもう存在しない）
     });
 
     it('再生中はキャンバスが無効化される', () => {
